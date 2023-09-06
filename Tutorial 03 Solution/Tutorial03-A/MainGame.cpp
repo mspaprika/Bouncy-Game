@@ -15,12 +15,31 @@ const Vector2D BALL_ACCELERATION(0.f, 0.5f);
 // Define a size for the paddle's AABB box
 const Vector2D PADDLE_AABB{100.f, 20.f};
 const Vector2D BALL_AABB{ 48.f, 48.f };
+const Vector2D CHEST_AABB{ 50.f, 50.f };
+
+const int CHEST_SPACING{ 100 };
 
 enum GameObjectType
 {
 	TYPE_BALL = 0,
-	TYPE_PADDLE = 1
+	TYPE_PADDLE = 1,
+	TYPE_CHEST = 2,
+	TYPE_DESTROYED = 3,
 };
+
+struct GameState
+{
+	
+	int yCount = 0;
+	int xCount = 0;
+	int x = 0;
+	int y = 0;
+	int offsetX = 80;
+	int offsetY = 70;
+};
+
+GameState gameState;
+
 
 // Forward-declaration of Draw
 
@@ -51,6 +70,23 @@ void MainGameEntry(PLAY_IGNORE_COMMAND_LINE)
 	GameObject& ballObj = Play::GetGameObjectByType(TYPE_BALL);
 	ballObj.velocity = BALL_VELOCITY_DEFAULT;
 	ballObj.acceleration = BALL_ACCELERATION;
+
+	
+	for (int i = 0; i < 24; i++)
+	{
+		if (gameState.x > DISPLAY_WIDTH - CHEST_SPACING * 2)
+		{
+			gameState.yCount += CHEST_SPACING;
+			gameState.xCount = 0;
+			gameState.x = (CHEST_SPACING * gameState.xCount) + gameState.offsetX;
+		}
+
+		gameState.x = (CHEST_SPACING * gameState.xCount) + gameState.offsetX;
+		gameState.y = gameState.yCount + gameState.offsetY;
+		Play::CreateGameObject(TYPE_CHEST, { gameState.x, gameState.y }, 10, "box");
+		gameState.xCount++;
+	}
+
 }
 
 // Called by PlayBuffer every frame (60 times a second!)
@@ -91,9 +127,16 @@ void Draw()
 	// Draw the ball. This version of the function is slower, but uses the rotation variable stored in GameObjects.
 	Play::DrawObjectRotated(Play::GetGameObjectByType(TYPE_BALL));
 
+	std::vector<int> chestIds{ Play::CollectGameObjectIDsByType(TYPE_CHEST) };
+
+	for (int chest : chestIds)
+	{
+		Play::DrawObject(Play::GetGameObject(chest));
+	}
+
 	// Example Code for drawing text with an integer value to the screen
 	int val{0};
-	Play::DrawFontText("64px", "High Score: " + std::to_string(val), Point2D(DISPLAY_WIDTH / 2, 100), Play::CENTRE);
+	Play::DrawFontText("64px", "High Score: " + std::to_string(val), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 100), Play::CENTRE);
 	
 	// 'Paste' our drawing buffer to the visible screen so we can see it
 	Play::PresentDrawingBuffer();
@@ -131,8 +174,6 @@ void UpdateBall()
 
 	if (IsBallColliding())
 	{
-		//ballObj.velocity *= -1;
-		//ballObj.acceleration.y = std::clamp(ballObj.acceleration.y, 0.f, 0.1f);
 		ballObj.pos.y = std::clamp(ballObj.pos.y, 0.f, DISPLAY_HEIGHT);
 		ballObj.acceleration *= -1;
 		ballObj.velocity.y *= -1;
@@ -161,6 +202,25 @@ bool IsBallColliding()
 {
 	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
 	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
+	
+	std::vector<int> chestIds{ Play::CollectGameObjectIDsByType(TYPE_CHEST) };
+
+	for (int chest : chestIds)
+	{
+		GameObject& chestObj{ Play::GetGameObject(chest) };
+		if (ballObj.pos.y - BALL_AABB.y < chestObj.pos.y + CHEST_AABB.y &&
+			ballObj.pos.y + BALL_AABB.y > chestObj.pos.y - CHEST_AABB.y)
+
+		{
+			if (ballObj.pos.x + BALL_AABB.x > chestObj.pos.x - CHEST_AABB.x &&
+				ballObj.pos.x - BALL_AABB.x < chestObj.pos.x + CHEST_AABB.x)
+			{
+				chestObj.type = TYPE_DESTROYED;
+				//Play::DestroyGameObject(chest);
+				return true;
+			}
+		}
+	}
 
 	if ( ballObj.pos.y - BALL_AABB.y < paddleObj.pos.y + PADDLE_AABB.y &&
 		ballObj.pos.y + BALL_AABB.y > paddleObj.pos.y - PADDLE_AABB.y )
@@ -170,11 +230,8 @@ bool IsBallColliding()
 			ballObj.pos.x - BALL_AABB.x < paddleObj.pos.x + PADDLE_AABB.x)
 		{
 			return true;
-
 		}
-		return false;
 	}
-
 	return false;
 }
 
@@ -192,3 +249,16 @@ void UpdatePlayerControls()
 		paddleObj.pos.x += 5;
 	}
 }
+
+void UpdateChests()
+{
+	std::vector<int> destroyedIds{ Play::CollectGameObjectIDsByType(TYPE_DESTROYED) };
+
+	for (int destroyed : destroyedIds)
+	{
+		GameObject& chestObj{ Play::GetGameObject(destroyed) };
+		Play::DestroyGameObject(destroyed);
+	}
+}
+
+	
