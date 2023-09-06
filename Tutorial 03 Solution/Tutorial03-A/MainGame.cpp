@@ -10,8 +10,11 @@ constexpr int BALL_RADIUS{ 48 };
 // Define a value for our ball's default velocity
 const Vector2D BALL_VELOCITY_DEFAULT(5.0f, 0.f);
 
+const Vector2D BALL_ACCELERATION(0.f, 0.5f);
+
 // Define a size for the paddle's AABB box
 const Vector2D PADDLE_AABB{100.f, 20.f};
+const Vector2D BALL_AABB{ 48.f, 48.f };
 
 enum GameObjectType
 {
@@ -20,7 +23,16 @@ enum GameObjectType
 };
 
 // Forward-declaration of Draw
+
 void Draw();
+
+void UpdateBall();
+void UpdatePaddle();
+void ResetBall();
+void UpdatePlayerControls();
+
+bool IsBallColliding();
+
 
 // The entry point for a PlayBuffer program
 void MainGameEntry(PLAY_IGNORE_COMMAND_LINE)
@@ -38,32 +50,18 @@ void MainGameEntry(PLAY_IGNORE_COMMAND_LINE)
 	// Set initial velocity for ball
 	GameObject& ballObj = Play::GetGameObjectByType(TYPE_BALL);
 	ballObj.velocity = BALL_VELOCITY_DEFAULT;
+	ballObj.acceleration = BALL_ACCELERATION;
 }
 
 // Called by PlayBuffer every frame (60 times a second!)
 bool MainGameUpdate(float elapsedTime)
 {
-	// Grab the objects we created in Entry
-	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
-	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE)};
-
-	// Apply ball velocity (remember, this is really just displacing the position once per frame)
-	ballObj.pos += ballObj.velocity;
-
-	if (ballObj.pos.x < 0 || ballObj.pos.x > DISPLAY_WIDTH)
-	{
-		ballObj.pos.x = std::clamp(ballObj.pos.x, 0.f, DISPLAY_WIDTH);
-		ballObj.velocity.x *= -1;
-	}
-
+	
+	UpdateBall();
+	UpdatePaddle();
+	ResetBall();
+	UpdatePlayerControls();
 	Draw();
-
-	// Some extra code to let you 'reset' the ball if you press space
-	if (Play::KeyDown(VK_SPACE))
-	{
-		ballObj.pos = Vector2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2);
-		ballObj.velocity = BALL_VELOCITY_DEFAULT;
-	}
 
 	return Play::KeyDown(VK_ESCAPE);
 }
@@ -99,4 +97,98 @@ void Draw()
 	
 	// 'Paste' our drawing buffer to the visible screen so we can see it
 	Play::PresentDrawingBuffer();
+}
+
+
+void UpdateBall()
+{
+	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
+
+	ballObj.velocity += ballObj.acceleration;
+	ballObj.pos += ballObj.velocity;
+
+	ballObj.acceleration.y = std::clamp(ballObj.acceleration.y, 0.f, 0.1f);
+
+	if (ballObj.pos.x < 0 || ballObj.pos.x > DISPLAY_WIDTH)
+	{
+		ballObj.pos.x = std::clamp(ballObj.pos.x, 0.f, DISPLAY_WIDTH);
+		ballObj.velocity.x *= -1;
+	}
+
+	if (ballObj.pos.y < 0)
+	{
+		ballObj.pos.y = std::clamp(ballObj.pos.y, 0.f, DISPLAY_HEIGHT);
+		ballObj.acceleration *= -1;
+		ballObj.velocity.y *= -1;
+	}
+
+	if (ballObj.pos.y > DISPLAY_HEIGHT)
+	{
+		ballObj.pos.y = std::clamp(ballObj.pos.y, 0.f, DISPLAY_HEIGHT);
+		ballObj.acceleration *= -1;
+		ballObj.velocity.y *= -1;
+	}
+
+	if (IsBallColliding())
+	{
+		//ballObj.velocity *= -1;
+		//ballObj.acceleration.y = std::clamp(ballObj.acceleration.y, 0.f, 0.1f);
+		ballObj.pos.y = std::clamp(ballObj.pos.y, 0.f, DISPLAY_HEIGHT);
+		ballObj.acceleration *= -1;
+		ballObj.velocity.y *= -1;
+	}
+}
+
+
+void UpdatePaddle()
+{
+	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
+}
+
+
+void ResetBall()
+{
+
+	if (Play::KeyDown(VK_SPACE))
+	{
+		GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
+		ballObj.pos = Vector2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2);
+		ballObj.velocity = BALL_VELOCITY_DEFAULT;
+	}
+}
+
+bool IsBallColliding()
+{
+	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
+	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
+
+	if ( ballObj.pos.y - BALL_AABB.y < paddleObj.pos.y + PADDLE_AABB.y &&
+		ballObj.pos.y + BALL_AABB.y > paddleObj.pos.y - PADDLE_AABB.y )
+
+	{
+		if (ballObj.pos.x + BALL_AABB.x > paddleObj.pos.x - PADDLE_AABB.x &&
+			ballObj.pos.x - BALL_AABB.x < paddleObj.pos.x + PADDLE_AABB.x)
+		{
+			return true;
+
+		}
+		return false;
+	}
+
+	return false;
+}
+
+void UpdatePlayerControls()
+{
+	if (Play::KeyDown(VK_LEFT))
+	{
+		GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
+		paddleObj.pos.x -= 5;
+	}
+
+	if (Play::KeyDown(VK_RIGHT))
+	{
+		GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
+		paddleObj.pos.x += 5;
+	}
 }
