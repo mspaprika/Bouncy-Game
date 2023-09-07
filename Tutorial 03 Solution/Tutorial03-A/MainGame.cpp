@@ -10,7 +10,7 @@ constexpr int BALL_RADIUS{ 48 };
 // Define a value for our ball's default velocity
 const Vector2D BALL_VELOCITY_DEFAULT(5.0f, 0.f);
 
-const Vector2D BALL_ACCELERATION(0.f, 0.5f);
+const Vector2D BALL_ACCELERATION(0.f, 0.2f);
 
 // Define a size for the paddle's AABB box
 const Vector2D PADDLE_AABB{100.f, 20.f};
@@ -29,16 +29,20 @@ enum GameObjectType
 
 struct GameState
 {
-	
 	int yCount = 0;
 	int xCount = 0;
 	int x = 0;
 	int y = 0;
 	int offsetX = 80;
 	int offsetY = 70;
+	int collisionCount = 0;
+	int ballRotation = 0;
+	
 };
 
 GameState gameState;
+
+int reversed = 0;
 
 
 // Forward-declaration of Draw
@@ -51,6 +55,7 @@ void ResetBall();
 void UpdatePlayerControls();
 
 bool IsBallColliding();
+bool IsBallCollidingChest();
 
 
 // The entry point for a PlayBuffer program
@@ -134,9 +139,19 @@ void Draw()
 		Play::DrawObject(Play::GetGameObject(chest));
 	}
 
+	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
+	//Play::DrawRect(ballObj.pos - BALL_AABB, ballObj.pos + BALL_AABB, Play::cWhite);
+
+	float velocity = ballObj.velocity.x;
+	float acceleration = ballObj.velocity.y;
+
 	// Example Code for drawing text with an integer value to the screen
 	int val{0};
 	Play::DrawFontText("64px", "High Score: " + std::to_string(val), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 100), Play::CENTRE);
+	Play::DrawFontText("64px", "Collisions: " + std::to_string(gameState.collisionCount), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 200), Play::CENTRE);
+	Play::DrawFontText("64px", "Reversed: " + std::to_string(reversed), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 300), Play::CENTRE);
+	Play::DrawFontText("64px", "Velocity x: " + std::to_string(velocity), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 400), Play::CENTRE);
+	Play::DrawFontText("64px", "Velocity y: " + std::to_string(acceleration), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 500), Play::CENTRE);
 	
 	// 'Paste' our drawing buffer to the visible screen so we can see it
 	Play::PresentDrawingBuffer();
@@ -146,16 +161,36 @@ void Draw()
 void UpdateBall()
 {
 	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
+	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
 
-	ballObj.velocity += ballObj.acceleration;
-	ballObj.pos += ballObj.velocity;
+	float minX = paddleObj.pos.x - PADDLE_AABB.x ;
+	float maxX = paddleObj.pos.x + PADDLE_AABB.x ;
+
+	float minY = paddleObj.pos.y - PADDLE_AABB.y ;
+	float maxY = paddleObj.pos.y + PADDLE_AABB.y ;
+
+	float ballMinX = ballObj.pos.x - BALL_AABB.x;
+	float ballMaxX = ballObj.pos.x + BALL_AABB.x;
+
+	float ballMinY = ballObj.pos.y - BALL_AABB.y;
+	float ballMaxY = ballObj.pos.y + BALL_AABB.y;
 
 	ballObj.acceleration.y = std::clamp(ballObj.acceleration.y, 0.f, 0.1f);
+
+	if (ballObj.velocity.y > 9.0f)
+	{
+		ballObj.velocity = { 5.0f, 8.0f };
+	}
+
+	
+	//ballObj.rotation += ballObj.velocity.x * 0.01f;
+	ballObj.rotSpeed = ballObj.velocity.x * 0.01f;
 
 	if (ballObj.pos.x < 0 || ballObj.pos.x > DISPLAY_WIDTH)
 	{
 		ballObj.pos.x = std::clamp(ballObj.pos.x, 0.f, DISPLAY_WIDTH);
-		ballObj.velocity.x *= -1;
+		ballObj.velocity.x *= -0.9f;
+		ballObj.velocity.y *= 0.9f;
 	}
 
 	if (ballObj.pos.y < 0)
@@ -174,16 +209,85 @@ void UpdateBall()
 
 	if (IsBallColliding())
 	{
-		ballObj.pos.y = std::clamp(ballObj.pos.y, 0.f, DISPLAY_HEIGHT);
-		ballObj.acceleration *= -1;
-		ballObj.velocity.y *= -1;
+		if ( ballObj.oldPos.y < minY && ballObj.oldPos.x > minX && ballObj.oldPos.x < maxX)
+		{
+			reversed = 1;
+			ballObj.acceleration *= -1;
+			ballObj.velocity.y *= -1.1;
+			ballObj.velocity.x *= 1.1;
+		}
+		else if (ballObj.oldPos.x < minX && ballObj.oldPos.y > minY && ballObj.oldPos.y < maxY)
+		{
+			reversed = 2;
+			ballObj.acceleration *= -1;
+			ballObj.velocity.x *= -1.1;
+			ballObj.velocity.y *= 1.1;
+		}
+		else if (ballObj.oldPos.x > minX && ballObj.oldPos.x < maxX && ballObj.oldPos.y > maxY)
+		{
+			reversed = 3;
+			ballObj.acceleration *= -1;
+			ballObj.velocity.y *= -1.1;
+			ballObj.velocity.x *= 1.1;
+		}
+		else if (ballObj.oldPos.x > maxX && ballObj.oldPos.y > minY && ballObj.oldPos.y < maxY)
+		{
+			reversed = 4;
+			ballObj.acceleration *= -1;
+			ballObj.velocity.x *= -1.1;
+			ballObj.velocity.y *= 1.1;
+		}
+		else
+		{
+			reversed = 5;
+			ballObj.velocity *= -1.1;
+			ballObj.acceleration *= -1;
+		}
 	}
+
+
+	if (IsBallCollidingChest())
+	{
+
+		if (ballObj.oldPos.y < ballMinY && ballObj.oldPos.x > ballMinX && ballObj.oldPos.x < ballMaxX)
+		{
+			ballObj.acceleration *= -1;
+			ballObj.velocity.y *= -1;
+			//ballObj.velocity.x *= 1.05;
+		}
+		else if (ballObj.oldPos.x < ballMinX && ballObj.oldPos.y > ballMinY && ballObj.oldPos.y < ballMaxY)
+		{
+			ballObj.acceleration *= -1;
+			ballObj.velocity.y *= -1.;
+			//ballObj.velocity.x *= 1.05;
+		}
+		else if (ballObj.oldPos.x > ballMinX && ballObj.oldPos.x < ballMaxX && ballObj.oldPos.y > ballMaxY)
+		{
+			ballObj.acceleration *= -1;
+			ballObj.velocity.y *= -1;
+		}
+		else if (ballObj.oldPos.x > ballMaxX && ballObj.oldPos.y > ballMinY && ballObj.oldPos.y < ballMaxY)
+		{
+			ballObj.acceleration *= -1;
+			ballObj.velocity.y *= -1.;
+		}
+		else
+		{
+			ballObj.velocity *= -1;
+			ballObj.acceleration *= -1;
+		}
+	}
+
+
+	Play::UpdateGameObject(ballObj);
 }
 
 
 void UpdatePaddle()
 {
 	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
+
+	Play::UpdateGameObject(paddleObj);
 }
 
 
@@ -202,7 +306,25 @@ bool IsBallColliding()
 {
 	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
 	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
-	
+
+	if ( ballObj.pos.y - BALL_AABB.y < paddleObj.pos.y + PADDLE_AABB.y &&
+		ballObj.pos.y + BALL_AABB.y > paddleObj.pos.y - PADDLE_AABB.y )
+
+	{
+		if (ballObj.pos.x + BALL_AABB.x > paddleObj.pos.x - PADDLE_AABB.x &&
+			ballObj.pos.x - BALL_AABB.x < paddleObj.pos.x + PADDLE_AABB.x)
+		{
+			gameState.collisionCount++;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool IsBallCollidingChest()
+{
+	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
+
 	std::vector<int> chestIds{ Play::CollectGameObjectIDsByType(TYPE_CHEST) };
 
 	for (int chest : chestIds)
@@ -217,19 +339,9 @@ bool IsBallColliding()
 			{
 				chestObj.type = TYPE_DESTROYED;
 				//Play::DestroyGameObject(chest);
+				gameState.collisionCount++;
 				return true;
 			}
-		}
-	}
-
-	if ( ballObj.pos.y - BALL_AABB.y < paddleObj.pos.y + PADDLE_AABB.y &&
-		ballObj.pos.y + BALL_AABB.y > paddleObj.pos.y - PADDLE_AABB.y )
-
-	{
-		if (ballObj.pos.x + BALL_AABB.x > paddleObj.pos.x - PADDLE_AABB.x &&
-			ballObj.pos.x - BALL_AABB.x < paddleObj.pos.x + PADDLE_AABB.x)
-		{
-			return true;
 		}
 	}
 	return false;
@@ -257,6 +369,7 @@ void UpdateChests()
 	for (int destroyed : destroyedIds)
 	{
 		GameObject& chestObj{ Play::GetGameObject(destroyed) };
+
 		Play::DestroyGameObject(destroyed);
 	}
 }
