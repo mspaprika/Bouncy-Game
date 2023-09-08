@@ -33,6 +33,14 @@ enum GameObjectType
 	TYPE_DESTROYED = 3,
 };
 
+enum GameFlow
+{
+	STATE_PLAY = 0,
+	STATE_GAMEOVER = 1,
+	STATE_PAUSED = 2,
+	STATE_WON = 3,
+};
+
 struct GameState
 {
 	int yCount = 0;
@@ -43,23 +51,34 @@ struct GameState
 	int offsetY = 70;
 	int collisionCount = 0;
 	int ballRotation = 0;
+	int lives = 3;
+	int score = 0;
+	GameFlow state = STATE_PLAY;
 	
 };
 
 GameState gameState;
 
-// Forward-declaration of Draw
+void DrawGameOver();
+void DrawGamePlay();
+void DrawPaused();
+void DrawGameWon();
 
-void Draw();
+void StartGame();
+void RestartAndRestore();
+
 void UpdateBall();
 void UpdatePaddle();
 void ResetBall();
 void UpdatePlayerControls();
 void UpdateDestroyed();
 
+void RestartGame();
+void DestroyObjects();
+
 bool IsBallColliding(GameObject& object);
 
-void CalculateMinMax(GameObject& object, float& minX, float& maxX, float& minY, float& maxY);
+void CalculateMinMax(const GameObject& object, float& minX, float& maxX, float& minY, float& maxY);
 void RedirectBall(const GameObject& object);
 void AdjustBallAndPaddle();
 
@@ -71,8 +90,75 @@ void MainGameEntry(PLAY_IGNORE_COMMAND_LINE)
 	Play::LoadBackground("Data\\Backgrounds\\background.png");
 	Play::CentreAllSpriteOrigins(); // this function makes it so that obj.pos values represent the center of a sprite instead of its top-left corner
 
+	StartGame();
+	DrawGamePlay();			
+}
+
+// Called by PlayBuffer every frame (60 times a second!)
+bool MainGameUpdate(float elapsedTime)
+{
+	switch (gameState.state)
+	{
+		case STATE_PLAY:
+		{
+			UpdateBall();
+			UpdatePaddle();
+			//ResetBall();
+			UpdatePlayerControls();			
+			UpdateDestroyed();
+			DrawGamePlay();
+			break;
+		}
+		case STATE_GAMEOVER:
+		{
+			DrawGameOver();
+
+			if (Play::KeyDown(VK_SPACE))
+			{
+				RestartAndRestore();
+			}
+			break;
+		}
+		case STATE_WON:
+		{
+			DrawGameWon();
+
+			if (Play::KeyDown(VK_SPACE))
+			{
+				RestartAndRestore();
+			 }
+			break;
+		}
+		case STATE_PAUSED:
+		{
+			DrawPaused();
+
+			if (Play::KeyDown(VK_SPACE))
+			{	
+				gameState.state = STATE_PLAY;
+			}
+			if (Play::KeyDown(VK_TAB))
+			{
+				RestartAndRestore();
+			}
+			break;
+		}
+	}
+	
+	return Play::KeyDown(VK_ESCAPE);
+}
+
+// Gets called once when the player quits the game 
+int MainGameExit(void)
+{
+	Play::DestroyManager();
+	return PLAY_OK; 
+}
+
+void StartGame()
+{
 	// Create a ball object and a paddle object
-	Play::CreateGameObject(TYPE_BALL, { DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 }, BALL_RADIUS, "ball");
+	Play::CreateGameObject(TYPE_BALL, { (DISPLAY_WIDTH / 2) - 200, DISPLAY_HEIGHT / 2 }, BALL_RADIUS, "ball");
 	Play::CreateGameObject(TYPE_PADDLE, { DISPLAY_WIDTH / 2, DISPLAY_HEIGHT - 100 }, BALL_RADIUS, "spanner");
 	// ... "ball", "spanner" etc. are the filenames of sprites stored in the Data folder alongside this solution, you can put any .PNGs in there if you feel creative :)
 
@@ -83,7 +169,7 @@ void MainGameEntry(PLAY_IGNORE_COMMAND_LINE)
 
 	int j{ -1 };
 
-	
+
 	for (int i = 0; i < 13; i++)
 	{
 		if (gameState.x > DISPLAY_WIDTH - CHEST_SPACING * 2)
@@ -100,38 +186,49 @@ void MainGameEntry(PLAY_IGNORE_COMMAND_LINE)
 		Play::CreateGameObject(TYPE_CHEST, { gameState.x, gameState.y }, 10, "box");
 		gameState.xCount++;
 	}
-
 }
 
-// Called by PlayBuffer every frame (60 times a second!)
-bool MainGameUpdate(float elapsedTime)
+void RestartAndRestore()
 {
-	
-	UpdateBall();
-	UpdatePaddle();
-	ResetBall();
-	UpdatePlayerControls();
-	Draw();
-	UpdateDestroyed();
-
-	return Play::KeyDown(VK_ESCAPE);
+	RestartGame();
+	DrawGamePlay();
+	gameState.lives = 3;
+	gameState.state = STATE_PLAY;
 }
 
-// Gets called once when the player quits the game 
-int MainGameExit(void)
+void DrawPaused()
 {
-	Play::DestroyManager();
-	return PLAY_OK; 
-}
-
-// Our draw function. Called by MainGameUpdate to render each frame. 
-void Draw()
-{
-	// Reset our drawing buffer so it is white
 	Play::ClearDrawingBuffer(Play::cWhite);
-
 	Play::DrawBackground();
+	Play::DrawFontText("64px", "PAUSED", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2), Play::CENTRE);
+	Play::DrawFontText("64px", "Press Space to Continue", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + 100), Play::CENTRE);
+	Play::DrawFontText("64px", "Press TAB to Restart", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + 200), Play::CENTRE);
+	Play::PresentDrawingBuffer();
+}
 
+void DrawGameWon()
+{
+	Play::ClearDrawingBuffer(Play::cWhite);
+	Play::DrawBackground();
+	Play::DrawFontText("64px", "YOU WON", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2), Play::CENTRE);
+	Play::DrawFontText("64px", "Press Space to Restart", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + 100), Play::CENTRE);
+	Play::DrawFontText("64px", "Highscore: " + std::to_string(gameState.score), Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + 200), Play::CENTRE);
+	Play::PresentDrawingBuffer();
+}
+
+void DrawGameOver()
+{
+	Play::ClearDrawingBuffer(Play::cWhite);
+	Play::DrawBackground();
+	Play::DrawFontText("64px", "GAME OVER", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2), Play::CENTRE);
+	Play::DrawFontText("64px", "Press Space to Restart", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + 100), Play::CENTRE);
+	Play::PresentDrawingBuffer();
+}
+
+void DrawGamePlay()
+{
+	Play::ClearDrawingBuffer(Play::cWhite);
+	Play::DrawBackground();
 	// Draw the 'paddle'
 	Play::DrawObject(Play::GetGameObjectByType(TYPE_PADDLE));
 
@@ -155,17 +252,14 @@ void Draw()
 	float velocity = ballObj.velocity.x;
 	float acceleration = ballObj.velocity.y;
 
-	// Example Code for drawing text with an integer value to the screen
-	int val{0};
-	Play::DrawFontText("64px", "High Score: " + std::to_string(val), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 100), Play::CENTRE);
-	Play::DrawFontText("64px", "Collisions: " + std::to_string(gameState.collisionCount), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 200), Play::CENTRE);
+	Play::DrawFontText("64px", "High Score: " + std::to_string(gameState.score), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 100), Play::CENTRE);
+	Play::DrawFontText("64px", "Lives: " + std::to_string(gameState.lives), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 200), Play::CENTRE);
+	Play::DrawFontText("64px", "Collisions: " + std::to_string(gameState.collisionCount), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 300), Play::CENTRE);
 	Play::DrawFontText("64px", "Velocity x: " + std::to_string(velocity), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 400), Play::CENTRE);
 	Play::DrawFontText("64px", "Velocity y: " + std::to_string(acceleration), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 500), Play::CENTRE);
-	
-	// 'Paste' our drawing buffer to the visible screen so we can see it
+
 	Play::PresentDrawingBuffer();
 }
-
 
 void UpdateBall()
 {
@@ -188,7 +282,22 @@ void UpdateBall()
 		ballObj.velocity.y *= 0.9f;
 	}
 
-	if (ballObj.pos.y < 0 || ballObj.pos.y > DISPLAY_HEIGHT)
+	if (ballObj.pos.y > DISPLAY_HEIGHT)
+	{
+		gameState.lives--;
+		if (gameState.lives > 0)
+		{
+			DestroyObjects();
+			RestartGame();
+			DrawGamePlay();
+		}
+		else
+		{
+			gameState.state = STATE_GAMEOVER;
+		}
+	}
+
+	if (ballObj.pos.y < 0)
 	{
 		ballObj.pos.y = std::clamp(ballObj.pos.y, 0.f, DISPLAY_HEIGHT);
 		ballObj.acceleration *= -1;
@@ -204,6 +313,11 @@ void UpdateBall()
 
 	std::vector<int> chestIds{ Play::CollectGameObjectIDsByType(TYPE_CHEST) };
 
+	if (chestIds.size() == 0)
+	{
+		gameState.state = STATE_WON;
+	}
+
 	for (int chest : chestIds)
 	{
 		GameObject& chestObj{ Play::GetGameObject(chest) };
@@ -216,11 +330,10 @@ void UpdateBall()
 			chestObj.type = TYPE_DESTROYED;
 		}
 	}
-
 	Play::UpdateGameObject(ballObj);
 }
 
-void CalculateMinMax(GameObject& object, float& minX, float& maxX, float& minY, float& maxY)
+void CalculateMinMax(const GameObject& object, float& minX, float& maxX, float& minY, float& maxY)
 {
 	switch (object.type)
 	{
@@ -278,7 +391,6 @@ void RedirectBall(const GameObject& object)
 		ball.acceleration *= -1;
 		ball.velocity.x *= velocityChange * (-1);
 		ball.velocity.y *= velocityChange * yChange;
-
 	}
 	else if (ball.oldPos.x > minX && ball.oldPos.x < maxX && ball.oldPos.y > maxY)
 	{
@@ -289,7 +401,7 @@ void RedirectBall(const GameObject& object)
 	else if (ball.oldPos.x > maxX && ball.oldPos.y > minY && ball.oldPos.y < maxY)
 	{	
 		AdjustBallAndPaddle();
-		
+
 		ball.acceleration *= -1;
 		ball.velocity.x *= velocityChange * (-1);
 		ball.velocity.y *= velocityChange * yChange;
@@ -314,24 +426,25 @@ void AdjustBallAndPaddle()
 	{
 		paddleObj.pos = paddleObj.oldPos;
 		ballObj.pos = ballObj.oldPos;
-	}
+		ballObj.velocity.x *= -1;
+	}	
 }
 
 void UpdatePaddle()
 {
 	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
+	paddleObj.pos.x = std::clamp (paddleObj.pos.x, PADDLE_AABB.x, DISPLAY_WIDTH - PADDLE_AABB.x);
 	Play::UpdateGameObject(paddleObj);
 }
 
-
 void ResetBall()
 {
-
 	if (Play::KeyDown(VK_SPACE))
 	{
 		GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
 		ballObj.pos = Vector2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2);
 		ballObj.velocity = BALL_VELOCITY_DEFAULT;
+		ballObj.acceleration = BALL_ACCELERATION;
 	}
 }
 
@@ -357,25 +470,34 @@ bool IsBallColliding(GameObject& object)
 			ballObj.pos.x - BALL_AABB.x < object.pos.x + AABB.x)
 		{
 			gameState.collisionCount++;
+
+			if (object.type == TYPE_CHEST)
+			{
+				gameState.score++;
+			}
 			return true;
 		}
 	}
 	return false;
 }
 
-
 void UpdatePlayerControls()
 {
 	if (Play::KeyDown(VK_LEFT))
 	{
 		GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
-		paddleObj.pos.x -= 5;
+		paddleObj.pos.x -= 10;
 	}
 
 	if (Play::KeyDown(VK_RIGHT))
 	{
 		GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
-		paddleObj.pos.x += 5;
+		paddleObj.pos.x += 10;
+	}
+
+	if (Play::KeyDown(VK_SHIFT))
+	{
+		gameState.state = STATE_PAUSED;
 	}
 }
 
@@ -387,6 +509,44 @@ void UpdateDestroyed()
 	{
 		Play::DestroyGameObject(destroyed);
 	}
+}
+
+void RestartGame()
+{
+	//gameState.lives = 3;
+	gameState.score = 0;
+	gameState.collisionCount = 0;
+	gameState.xCount = 0;
+	gameState.yCount = 0;
+	gameState.x = 0;
+	gameState.y = 0;
+
+	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
+
+	ballObj.pos = Vector2D((DISPLAY_WIDTH / 2) - 200, DISPLAY_HEIGHT / 2);
+	ballObj.velocity = BALL_VELOCITY_DEFAULT;
+	ballObj.acceleration = BALL_ACCELERATION;
+
+	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
+	paddleObj.pos = Vector2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT - 100);
+	
+	int j{ -1 };
+
+	DestroyObjects();
+	StartGame();
+}
+
+void DestroyObjects()
+{
+	std::vector<int> chestIds{ Play::CollectGameObjectIDsByType(TYPE_CHEST) };
+
+	for (int chest : chestIds)
+	{
+		Play::DestroyGameObject(chest);
+	}
+
+	Play::DestroyGameObjectsByType(TYPE_PADDLE);
+	Play::DestroyGameObjectsByType(TYPE_BALL);
 }
 
 	
