@@ -17,7 +17,13 @@ const Vector2D PADDLE_AABB{100.f, 20.f};
 const Vector2D BALL_AABB{ 48.f, 48.f };
 const Vector2D CHEST_AABB{ 50.f, 50.f };
 
-const int CHEST_SPACING{ 100 };
+float minY = 0.f;
+float maxY = 0.f;
+
+float minX = 0.f;
+float maxX = 0.f;
+
+const int CHEST_SPACING{ 90 };
 
 enum GameObjectType
 {
@@ -42,21 +48,20 @@ struct GameState
 
 GameState gameState;
 
-int reversed = 0;
-
-
 // Forward-declaration of Draw
 
 void Draw();
-
 void UpdateBall();
 void UpdatePaddle();
 void ResetBall();
 void UpdatePlayerControls();
+void UpdateDestroyed();
 
-bool IsBallColliding();
-bool IsBallCollidingChest();
+bool IsBallColliding(GameObject& object);
 
+void CalculateMinMax(GameObject& object, float& minX, float& maxX, float& minY, float& maxY);
+void RedirectBall(const GameObject& object);
+void AdjustBallAndPaddle();
 
 // The entry point for a PlayBuffer program
 void MainGameEntry(PLAY_IGNORE_COMMAND_LINE)
@@ -76,17 +81,21 @@ void MainGameEntry(PLAY_IGNORE_COMMAND_LINE)
 	ballObj.velocity = BALL_VELOCITY_DEFAULT;
 	ballObj.acceleration = BALL_ACCELERATION;
 
+	int j{ -1 };
+
 	
-	for (int i = 0; i < 24; i++)
+	for (int i = 0; i < 13; i++)
 	{
 		if (gameState.x > DISPLAY_WIDTH - CHEST_SPACING * 2)
 		{
 			gameState.yCount += CHEST_SPACING;
 			gameState.xCount = 0;
+			j = 0;
 			gameState.x = (CHEST_SPACING * gameState.xCount) + gameState.offsetX;
 		}
 
-		gameState.x = (CHEST_SPACING * gameState.xCount) + gameState.offsetX;
+		j++;
+		gameState.x = (CHEST_SPACING * gameState.xCount) + gameState.offsetX + CHEST_SPACING * j;
 		gameState.y = gameState.yCount + gameState.offsetY;
 		Play::CreateGameObject(TYPE_CHEST, { gameState.x, gameState.y }, 10, "box");
 		gameState.xCount++;
@@ -103,6 +112,7 @@ bool MainGameUpdate(float elapsedTime)
 	ResetBall();
 	UpdatePlayerControls();
 	Draw();
+	UpdateDestroyed();
 
 	return Play::KeyDown(VK_ESCAPE);
 }
@@ -149,7 +159,6 @@ void Draw()
 	int val{0};
 	Play::DrawFontText("64px", "High Score: " + std::to_string(val), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 100), Play::CENTRE);
 	Play::DrawFontText("64px", "Collisions: " + std::to_string(gameState.collisionCount), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 200), Play::CENTRE);
-	Play::DrawFontText("64px", "Reversed: " + std::to_string(reversed), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 300), Play::CENTRE);
 	Play::DrawFontText("64px", "Velocity x: " + std::to_string(velocity), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 400), Play::CENTRE);
 	Play::DrawFontText("64px", "Velocity y: " + std::to_string(acceleration), Point2D(DISPLAY_WIDTH - 150, DISPLAY_HEIGHT - 500), Play::CENTRE);
 	
@@ -162,19 +171,7 @@ void UpdateBall()
 {
 	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
 	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
-
-	float minX = paddleObj.pos.x - PADDLE_AABB.x ;
-	float maxX = paddleObj.pos.x + PADDLE_AABB.x ;
-
-	float minY = paddleObj.pos.y - PADDLE_AABB.y ;
-	float maxY = paddleObj.pos.y + PADDLE_AABB.y ;
-
-	float ballMinX = ballObj.pos.x - BALL_AABB.x;
-	float ballMaxX = ballObj.pos.x + BALL_AABB.x;
-
-	float ballMinY = ballObj.pos.y - BALL_AABB.y;
-	float ballMaxY = ballObj.pos.y + BALL_AABB.y;
-
+	
 	ballObj.acceleration.y = std::clamp(ballObj.acceleration.y, 0.f, 0.1f);
 
 	if (ballObj.velocity.y > 9.0f)
@@ -182,8 +179,6 @@ void UpdateBall()
 		ballObj.velocity = { 5.0f, 8.0f };
 	}
 
-	
-	//ballObj.rotation += ballObj.velocity.x * 0.01f;
 	ballObj.rotSpeed = ballObj.velocity.x * 0.01f;
 
 	if (ballObj.pos.x < 0 || ballObj.pos.x > DISPLAY_WIDTH)
@@ -193,100 +188,138 @@ void UpdateBall()
 		ballObj.velocity.y *= 0.9f;
 	}
 
-	if (ballObj.pos.y < 0)
+	if (ballObj.pos.y < 0 || ballObj.pos.y > DISPLAY_HEIGHT)
 	{
 		ballObj.pos.y = std::clamp(ballObj.pos.y, 0.f, DISPLAY_HEIGHT);
 		ballObj.acceleration *= -1;
 		ballObj.velocity.y *= -1;
 	}
 
-	if (ballObj.pos.y > DISPLAY_HEIGHT)
+	CalculateMinMax(paddleObj, minX, maxX, minY, maxY);
+
+	if (IsBallColliding(paddleObj))
 	{
-		ballObj.pos.y = std::clamp(ballObj.pos.y, 0.f, DISPLAY_HEIGHT);
-		ballObj.acceleration *= -1;
-		ballObj.velocity.y *= -1;
+		RedirectBall(paddleObj);
 	}
 
-	if (IsBallColliding())
+	std::vector<int> chestIds{ Play::CollectGameObjectIDsByType(TYPE_CHEST) };
+
+	for (int chest : chestIds)
 	{
-		if ( ballObj.oldPos.y < minY && ballObj.oldPos.x > minX && ballObj.oldPos.x < maxX)
+		GameObject& chestObj{ Play::GetGameObject(chest) };
+
+		CalculateMinMax(chestObj, minX, maxX, minY, maxY);
+
+		if (IsBallColliding(chestObj))
 		{
-			reversed = 1;
-			ballObj.acceleration *= -1;
-			ballObj.velocity.y *= -1.1;
-			ballObj.velocity.x *= 1.1;
-		}
-		else if (ballObj.oldPos.x < minX && ballObj.oldPos.y > minY && ballObj.oldPos.y < maxY)
-		{
-			reversed = 2;
-			ballObj.acceleration *= -1;
-			ballObj.velocity.x *= -1.1;
-			ballObj.velocity.y *= 1.1;
-		}
-		else if (ballObj.oldPos.x > minX && ballObj.oldPos.x < maxX && ballObj.oldPos.y > maxY)
-		{
-			reversed = 3;
-			ballObj.acceleration *= -1;
-			ballObj.velocity.y *= -1.1;
-			ballObj.velocity.x *= 1.1;
-		}
-		else if (ballObj.oldPos.x > maxX && ballObj.oldPos.y > minY && ballObj.oldPos.y < maxY)
-		{
-			reversed = 4;
-			ballObj.acceleration *= -1;
-			ballObj.velocity.x *= -1.1;
-			ballObj.velocity.y *= 1.1;
-		}
-		else
-		{
-			reversed = 5;
-			ballObj.velocity *= -1.1;
-			ballObj.acceleration *= -1;
+			RedirectBall(chestObj);		
+			chestObj.type = TYPE_DESTROYED;
 		}
 	}
-
-
-	if (IsBallCollidingChest())
-	{
-
-		if (ballObj.oldPos.y < ballMinY && ballObj.oldPos.x > ballMinX && ballObj.oldPos.x < ballMaxX)
-		{
-			ballObj.acceleration *= -1;
-			ballObj.velocity.y *= -1;
-			//ballObj.velocity.x *= 1.05;
-		}
-		else if (ballObj.oldPos.x < ballMinX && ballObj.oldPos.y > ballMinY && ballObj.oldPos.y < ballMaxY)
-		{
-			ballObj.acceleration *= -1;
-			ballObj.velocity.y *= -1.;
-			//ballObj.velocity.x *= 1.05;
-		}
-		else if (ballObj.oldPos.x > ballMinX && ballObj.oldPos.x < ballMaxX && ballObj.oldPos.y > ballMaxY)
-		{
-			ballObj.acceleration *= -1;
-			ballObj.velocity.y *= -1;
-		}
-		else if (ballObj.oldPos.x > ballMaxX && ballObj.oldPos.y > ballMinY && ballObj.oldPos.y < ballMaxY)
-		{
-			ballObj.acceleration *= -1;
-			ballObj.velocity.y *= -1.;
-		}
-		else
-		{
-			ballObj.velocity *= -1;
-			ballObj.acceleration *= -1;
-		}
-	}
-
 
 	Play::UpdateGameObject(ballObj);
 }
 
+void CalculateMinMax(GameObject& object, float& minX, float& maxX, float& minY, float& maxY)
+{
+	switch (object.type)
+	{
+		case TYPE_PADDLE:
+		{
+			minX = object.pos.x - PADDLE_AABB.x;
+			maxX = object.pos.x + PADDLE_AABB.x;
+
+			minY = object.pos.y - PADDLE_AABB.y;
+			maxY = object.pos.y + PADDLE_AABB.y;
+
+			break;
+		}
+		case TYPE_CHEST:
+		{
+			minX = object.pos.x - CHEST_AABB.x;
+			maxX = object.pos.x + CHEST_AABB.x;
+
+			minY = object.pos.y - CHEST_AABB.y;
+			maxY = object.pos.y + CHEST_AABB.y;
+
+			break;
+		}
+	}
+}
+
+void RedirectBall(const GameObject& object)
+{
+	GameObject& ball{ Play::GetGameObjectByType(TYPE_BALL) };
+
+	float velocityChange = 0.0f;
+	float yChange = 0.0f;
+
+	if (object.type == TYPE_PADDLE)
+	{
+		velocityChange = 1.1f;
+		yChange = 1.0f;
+	}
+	else if (object.type == TYPE_CHEST)
+	{
+		velocityChange = 1.0f;
+		yChange = -1.0f;
+	}
+		
+	if (ball.oldPos.y < minY && ball.oldPos.x > minX && ball.oldPos.x < maxX)
+	{
+		ball.acceleration *= -1;
+		ball.velocity.y *= velocityChange * (-1);
+		ball.velocity.x *= velocityChange;
+	}
+	else if (ball.oldPos.x < minX && ball.oldPos.y > minY && ball.oldPos.y < maxY)
+	{
+		AdjustBallAndPaddle();
+
+		ball.acceleration *= -1;
+		ball.velocity.x *= velocityChange * (-1);
+		ball.velocity.y *= velocityChange * yChange;
+
+	}
+	else if (ball.oldPos.x > minX && ball.oldPos.x < maxX && ball.oldPos.y > maxY)
+	{
+		ball.acceleration *= -1;
+		ball.velocity.y *= velocityChange * (-1);
+		ball.velocity.x *= velocityChange;
+	}
+	else if (ball.oldPos.x > maxX && ball.oldPos.y > minY && ball.oldPos.y < maxY)
+	{	
+		AdjustBallAndPaddle();
+		
+		ball.acceleration *= -1;
+		ball.velocity.x *= velocityChange * (-1);
+		ball.velocity.y *= velocityChange * yChange;
+	}
+	else
+	{
+		AdjustBallAndPaddle();
+
+		ball.velocity *= velocityChange * (-1);
+		ball.velocity.x *= yChange;
+		ball.acceleration *= -1;
+	}
+}
+
+void AdjustBallAndPaddle()
+{
+	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
+	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
+
+	if (paddleObj.pos.x > paddleObj.oldPos.x && ballObj.pos.x < ballObj.oldPos.x
+		|| paddleObj.pos.x < paddleObj.oldPos.x && ballObj.pos.x > ballObj.oldPos.x)
+	{
+		paddleObj.pos = paddleObj.oldPos;
+		ballObj.pos = ballObj.oldPos;
+	}
+}
 
 void UpdatePaddle()
 {
 	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
-
 	Play::UpdateGameObject(paddleObj);
 }
 
@@ -302,17 +335,26 @@ void ResetBall()
 	}
 }
 
-bool IsBallColliding()
+bool IsBallColliding(GameObject& object)
 {
 	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
-	GameObject& paddleObj{ Play::GetGameObjectByType(TYPE_PADDLE) };
+	Vector2D AABB{ 0, 0 };
 
-	if ( ballObj.pos.y - BALL_AABB.y < paddleObj.pos.y + PADDLE_AABB.y &&
-		ballObj.pos.y + BALL_AABB.y > paddleObj.pos.y - PADDLE_AABB.y )
+	if (object.type == TYPE_PADDLE)
+	{
+		AABB = PADDLE_AABB;
+	}
+	else if (object.type == TYPE_CHEST)
+	{
+		AABB = CHEST_AABB;
+	}
+
+	if ( ballObj.pos.y - BALL_AABB.y < object.pos.y + AABB.y &&
+		ballObj.pos.y + BALL_AABB.y > object.pos.y - AABB.y )
 
 	{
-		if (ballObj.pos.x + BALL_AABB.x > paddleObj.pos.x - PADDLE_AABB.x &&
-			ballObj.pos.x - BALL_AABB.x < paddleObj.pos.x + PADDLE_AABB.x)
+		if (ballObj.pos.x + BALL_AABB.x > object.pos.x - AABB.x &&
+			ballObj.pos.x - BALL_AABB.x < object.pos.x + AABB.x)
 		{
 			gameState.collisionCount++;
 			return true;
@@ -321,31 +363,6 @@ bool IsBallColliding()
 	return false;
 }
 
-bool IsBallCollidingChest()
-{
-	GameObject& ballObj{ Play::GetGameObjectByType(TYPE_BALL) };
-
-	std::vector<int> chestIds{ Play::CollectGameObjectIDsByType(TYPE_CHEST) };
-
-	for (int chest : chestIds)
-	{
-		GameObject& chestObj{ Play::GetGameObject(chest) };
-		if (ballObj.pos.y - BALL_AABB.y < chestObj.pos.y + CHEST_AABB.y &&
-			ballObj.pos.y + BALL_AABB.y > chestObj.pos.y - CHEST_AABB.y)
-
-		{
-			if (ballObj.pos.x + BALL_AABB.x > chestObj.pos.x - CHEST_AABB.x &&
-				ballObj.pos.x - BALL_AABB.x < chestObj.pos.x + CHEST_AABB.x)
-			{
-				chestObj.type = TYPE_DESTROYED;
-				//Play::DestroyGameObject(chest);
-				gameState.collisionCount++;
-				return true;
-			}
-		}
-	}
-	return false;
-}
 
 void UpdatePlayerControls()
 {
@@ -362,14 +379,12 @@ void UpdatePlayerControls()
 	}
 }
 
-void UpdateChests()
+void UpdateDestroyed()
 {
 	std::vector<int> destroyedIds{ Play::CollectGameObjectIDsByType(TYPE_DESTROYED) };
 
 	for (int destroyed : destroyedIds)
 	{
-		GameObject& chestObj{ Play::GetGameObject(destroyed) };
-
 		Play::DestroyGameObject(destroyed);
 	}
 }
