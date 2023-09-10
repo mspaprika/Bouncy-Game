@@ -231,8 +231,8 @@ void DrawHello()
 	Play::ClearDrawingBuffer(Play::cWhite);
 	Play::DrawBackground();
 	Play::DrawFontText("64px", "Welcome to Bouncy Game !", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2), Play::CENTRE);
-	Play::DrawFontText("64px", "Press space to start a game", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + 100), Play::CENTRE);
-	Play::DrawFontText("64px", "Press F2 for Sound and F3 for Music", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + 200), Play::CENTRE);
+	Play::DrawFontText("64px", "Press space to start a game || shift to pause", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + 100), Play::CENTRE);
+	Play::DrawFontText("64px", "Press F2 for Sound || F3 for Music", Point2D(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + 200), Play::CENTRE);
 	DrawSoundControl();
 	Play::PresentDrawingBuffer();
 }
